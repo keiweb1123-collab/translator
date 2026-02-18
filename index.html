@@ -4,39 +4,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ID-EN Realtime Translator</title>
-    <link rel="stylesheet" href="style.css?v=3">
+    <title>Translator</title>
+    <link rel="stylesheet" href="style.css?v=4">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 
 <body>
-    <div class="container">
-        <!-- ステータス -->
-        <div class="controls">
-            <span id="listeningStatus">マイク: 停止中</span>
-        </div>
+    <!-- ヘッダー（固定） -->
+    <header>
+        <div class="header-title">🌐 Translator</div>
+        <div id="statusDot" class="status-dot off"></div>
+    </header>
 
-        <!-- ボタン -->
-        <div class="action-buttons">
-            <button id="startBtn">翻訳開始</button>
-            <button id="stopBtn" disabled>停止</button>
+    <!-- メインエリア（スクロール可能） -->
+    <main id="translationDisplay">
+        <div id="emptyState" class="empty-state">
+            <div class="empty-icon">🎙️</div>
+            <div class="empty-text">下のボタンを押して<br>インドネシア語で話してください</div>
         </div>
+    </main>
 
-        <!-- 翻訳表示エリア -->
-        <div id="translationDisplay">
-            <div class="placeholder-text">「翻訳開始」を押して話してください</div>
-        </div>
-
-        <!-- 音声認識中のプレビュー -->
-        <div class="speech-preview">
-            <span>聞き取り中: </span>
+    <!-- フッター（固定） -->
+    <footer>
+        <!-- 聞き取りプレビュー -->
+        <div id="previewBar" class="preview-bar hidden">
             <span id="currentSpeech">...</span>
         </div>
+        <!-- ボタン -->
+        <div class="button-area">
+            <button id="startBtn" class="btn-start">🎤 翻訳開始</button>
+            <button id="stopBtn" class="btn-stop" disabled>⏹ 停止</button>
+        </div>
+    </footer>
 
-        <!-- 通知 -->
-        <div id="notificationArea" class="notification hidden"></div>
-    </div>
+    <!-- 通知 -->
+    <div id="notificationArea" class="notification hidden"></div>
 
-    <script src="script.js?v=13"></script>
+    <script src="script.js?v=14"></script>
 </body>
 
 </html>
