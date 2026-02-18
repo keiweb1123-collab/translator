@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ID-EN Local AI Translator</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* 追加スタイル: プログレスバー */
+        #progress-container {
+            width: 100%;
+            background-color: #333;
+            border-radius: 4px;
+            margin: 10px 0;
+            display: none;
+            /* 初期は非表示 */
+        }
+
+        #progress-bar {
+            width: 0%;
+            height: 20px;
+            background-color: #4CAF50;
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+
+        #status-text {
+            font-size: 0.8rem;
+            color: #aaa;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- 設定・コントロールエリア -->
+        <div class="controls">
+            <div class="status-indicators">
+                <span id="aiStatus">AIモデル: 準備中...</span>
+                <span id="listeningStatus">マイク: 停止中</span>
+            </div>
+        </div>
+
+        <!-- モデル読み込みプログレスバー -->
+        <div id="progress-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div id="status-text"></div>
+
+        <!-- メインの翻訳表示エリア -->
+        <div class="translation-display" id="translationDisplay">
+            <div class="placeholder-text">「翻訳開始」を押すとAIの準備が始まります...<br>(初回のみダウンロードに時間がかかります)</div>
+        </div>
+
+        <!-- 音声認識結果の仮表示 -->
+        <div class="speech-preview">
+            <span class="label">認識中 (ID):</span>
+            <span id="currentSpeech">...</span>
+        </div>
+
+        <!-- 操作ボタン -->
+        <div class="action-buttons">
+            <button id="startBtn" disabled>翻訳開始</button>
+            <button id="stopBtn" disabled>停止</button>
+        </div>
+
+        <!-- 通知メッセージエリア -->
+        <div id="notificationArea" class="notification hidden"></div>
+
+        <!-- デバッグログエリア -->
+        <div id="debugLog" style="
+            position: fixed;
+            bottom: 0;
+            right: 0;
+            width: 300px;
+            height: 150px;
+            background: rgba(0,0,0,0.8);
+            border: 1px solid #444;
+            color: #0f0;
+            font-size: 10px;
+            overflow-y: scroll;
+            padding: 5px;
+            z-index: 1000;
+            font-family: monospace;
+            pointer-events: none;
+        "></div>
+    </div>
+
+    <!-- Transformers.js は script.js 内で動的にインポートするか、ここでESMとして読み込む -->
+    <script type="module" src="script.js?v=10"></script>
+</body>
+
+</html>
