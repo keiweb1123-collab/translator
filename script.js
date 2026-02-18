@@ -1,70 +1,73 @@
-// DOM要素
-const startBtn = document.getElementById('startBtn');
-const stopBtn = document.getElementById('stopBtn');
-const listeningStatus = document.getElementById('listeningStatus');
-const translationDisplay = document.getElementById('translationDisplay');
-const currentSpeechEl = document.getElementById('currentSpeech');
-const notificationArea = document.getElementById('notificationArea');
+// DOM
+var startBtn = document.getElementById('startBtn');
+var stopBtn = document.getElementById('stopBtn');
+var statusDot = document.getElementById('statusDot');
+var translationDisplay = document.getElementById('translationDisplay');
+var currentSpeechEl = document.getElementById('currentSpeech');
+var previewBar = document.getElementById('previewBar');
+var emptyState = document.getElementById('emptyState');
+var notificationArea = document.getElementById('notificationArea');
 
 // 状態
-let recognition = null;
-let isRunning = false;
-let debounceTimer = null;
+var recognition = null;
+var isRunning = false;
+var buffer = '';          // 音声テキストを溜めるバッファ
+var sendTimer = null;     // バッファ送信用タイマー
+var BATCH_INTERVAL = 3000; // 3秒ごとにまとめて翻訳
 
-// 音声認識のセットアップ
+// 音声認識セットアップ
 function setupRecognition() {
-    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-        alert('このブラウザは音声認識に対応していません。Chromeを使ってください。');
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+        alert('このブラウザは音声認識に対応していません。Chromeをお使いください。');
         return;
     }
 
-    recognition = new SpeechRecognition();
-    recognition.lang = 'id-ID'; // インドネシア語
+    recognition = new SR();
+    recognition.lang = 'id-ID';
     recognition.continuous = true;
     recognition.interimResults = true;
 
     recognition.onstart = function () {
-        listeningStatus.textContent = 'マイク: 聞き取り中...';
-        listeningStatus.style.color = '#0f0';
+        statusDot.className = 'status-dot on';
         startBtn.disabled = true;
         stopBtn.disabled = false;
+        previewBar.classList.remove('hidden');
         isRunning = true;
+
+        // 3秒ごとにバッファを送信するタイマー開始
+        sendTimer = setInterval(flushBuffer, BATCH_INTERVAL);
     };
 
     recognition.onend = function () {
-        listeningStatus.textContent = 'マイク: 停止中';
-        listeningStatus.style.color = '#aaa';
+        statusDot.className = 'status-dot off';
         startBtn.disabled = false;
         stopBtn.disabled = true;
         isRunning = false;
+
+        clearInterval(sendTimer);
+        // 残りのバッファがあれば送信
+        flushBuffer();
     };
 
     recognition.onresult = function (event) {
-        var interimTranscript = '';
-        var finalTranscript = '';
+        var interim = '';
+        var final_text = '';
 
         for (var i = event.resultIndex; i < event.results.length; i++) {
             if (event.results[i].isFinal) {
-                finalTranscript += event.results[i][0].transcript;
+                final_text += event.results[i][0].transcript;
             } else {
-                interimTranscript += event.results[i][0].transcript;
+                interim += event.results[i][0].transcript;
             }
         }
 
         // プレビュー表示
-        currentSpeechEl.textContent = finalTranscript || interimTranscript || '...';
+        currentSpeechEl.textContent = final_text || interim || '...';
 
-        // 確定テキストがあれば即座に翻訳
-        if (finalTranscript.trim()) {
-            translateWithMyMemory(finalTranscript.trim());
-        }
-        // 途中経過が1秒変化なければプレビュー翻訳
-        else if (interimTranscript.trim()) {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(function () {
-                translateWithMyMemory(interimTranscript.trim(), true);
-            }, 1000);
+        // 確定テキストをバッファに追加（まだ送信しない）
+        if (final_text.trim()) {
+            buffer += ' ' + final_text.trim();
         }
     };
 
@@ -73,27 +76,26 @@ function setupRecognition() {
     };
 }
 
-// MyMemory APIで翻訳
-function translateWithMyMemory(text, isPreview) {
-    // MyMemory API: 無料、APIキー不要
+// バッファを送信して翻訳
+function flushBuffer() {
+    var text = buffer.trim();
+    buffer = '';
+    if (!text) return;
+    translateWithMyMemory(text);
+}
+
+// MyMemory API
+function translateWithMyMemory(text) {
     var url = 'https://api.mymemory.translated.net/get?q='
         + encodeURIComponent(text)
         + '&langpair=id|en';
 
     fetch(url)
-        .then(function (response) { return response.json(); })
+        .then(function (r) { return r.json(); })
         .then(function (data) {
             if (data.responseStatus === 200 && data.responseData) {
                 var translated = data.responseData.translatedText;
-
-                if (isPreview) {
-                    // プレビュー（薄く表示、履歴に残さない）
-                    updatePreview(translated);
-                } else {
-                    // 確定翻訳（履歴に追加）
-                    clearPreview();
-                    addTranslation(translated, text);
-                }
+                addCard(translated, text);
             }
         })
         .catch(function (err) {
@@ -101,76 +103,51 @@ function translateWithMyMemory(text, isPreview) {
         });
 }
 
-// 翻訳結果を画面に追加
-function addTranslation(english, indonesian) {
-    // プレースホルダーがあれば消す
-    var placeholder = document.querySelector('.placeholder-text');
-    if (placeholder) placeholder.remove();
-
-    // 過去のアイテムを薄くする
-    var items = document.querySelectorAll('.translation-item');
-    for (var i = 0; i < items.length; i++) {
-        items[i].classList.add('history');
+// 翻訳カードを追加
+function addCard(english, indonesian) {
+    // 空の状態を消す
+    if (emptyState) {
+        emptyState.remove();
+        emptyState = null;
     }
 
-    // 新しい翻訳アイテムを作成
-    var item = document.createElement('div');
-    item.className = 'translation-item';
+    // 既存のカードを「過去」にする
+    var cards = document.querySelectorAll('.translation-card.latest');
+    for (var i = 0; i < cards.length; i++) {
+        cards[i].classList.remove('latest');
+        cards[i].classList.add('past');
+    }
+
+    // 新しいカードを作成
+    var card = document.createElement('div');
+    card.className = 'translation-card latest';
 
     var enDiv = document.createElement('div');
-    enDiv.className = 'translation-en';
+    enDiv.className = 'en';
     enDiv.textContent = english;
 
     var idDiv = document.createElement('div');
-    idDiv.className = 'translation-id';
-    idDiv.textContent = '🇮🇩 ' + indonesian;
+    idDiv.className = 'id-text';
+    idDiv.textContent = indonesian;
 
-    item.appendChild(enDiv);
-    item.appendChild(idDiv);
-    translationDisplay.appendChild(item);
+    var timeDiv = document.createElement('div');
+    timeDiv.className = 'time-stamp';
+    timeDiv.textContent = new Date().toLocaleTimeString();
+
+    card.appendChild(enDiv);
+    card.appendChild(idDiv);
+    card.appendChild(timeDiv);
+
+    translationDisplay.appendChild(card);
 
     // 下にスクロール
-    window.scrollTo(0, document.body.scrollHeight);
+    translationDisplay.scrollTop = translationDisplay.scrollHeight;
 }
 
-// プレビュー表示
-function updatePreview(text) {
-    var previewEl = document.getElementById('previewTranslation');
-    if (!previewEl) {
-        previewEl = document.createElement('div');
-        previewEl.id = 'previewTranslation';
-        previewEl.style.color = '#666';
-        previewEl.style.fontStyle = 'italic';
-        previewEl.style.fontSize = '1.2rem';
-        previewEl.style.padding = '10px 0';
-        translationDisplay.appendChild(previewEl);
-    }
-    previewEl.textContent = '(Preview) ' + text;
-    window.scrollTo(0, document.body.scrollHeight);
-}
-
-function clearPreview() {
-    var previewEl = document.getElementById('previewTranslation');
-    if (previewEl) previewEl.remove();
-}
-
-// 通知表示
-function showNotification(message, type) {
-    notificationArea.textContent = message;
-    notificationArea.className = 'notification ' + type;
-    setTimeout(function () {
-        notificationArea.className = 'notification hidden';
-    }, 3000);
-}
-
-// ボタンイベント
+// ボタン
 startBtn.addEventListener('click', function () {
     if (!recognition) setupRecognition();
-    try {
-        recognition.start();
-    } catch (e) {
-        console.error(e);
-    }
+    try { recognition.start(); } catch (e) { console.error(e); }
 });
 
 stopBtn.addEventListener('click', function () {
