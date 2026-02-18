@@ -4,51 +4,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ID-EN Local AI Translator</title>
-    <link rel="stylesheet" href="style.css?v=2">
+    <title>ID-EN Realtime Translator</title>
+    <link rel="stylesheet" href="style.css?v=3">
 </head>
 
 <body>
     <div class="container">
-        <!-- ステータス表示 -->
+        <!-- ステータス -->
         <div class="controls">
-            <div class="status-indicators">
-                <span id="aiStatus">AIモデル: 準備中...</span>
-                <span id="listeningStatus">マイク: 停止中</span>
-            </div>
+            <span id="listeningStatus">マイク: 停止中</span>
         </div>
 
-        <!-- モデル読み込みプログレスバー -->
-        <div id="progress-container" style="display:none;">
-            <div id="progress-bar"></div>
-        </div>
-        <div id="status-text"></div>
-
-        <!-- 操作ボタン（上に移動して見つけやすく） -->
+        <!-- ボタン -->
         <div class="action-buttons">
-            <button id="startBtn" disabled>翻訳開始</button>
+            <button id="startBtn">翻訳開始</button>
             <button id="stopBtn" disabled>停止</button>
         </div>
 
-        <!-- メインの翻訳表示エリア -->
-        <div class="translation-display" id="translationDisplay">
-            <div class="placeholder-text">「翻訳開始」を押すとAIの準備が始まります...<br>(初回のみダウンロードに時間がかかります)</div>
+        <!-- 翻訳表示エリア -->
+        <div id="translationDisplay">
+            <div class="placeholder-text">「翻訳開始」を押して話してください</div>
         </div>
 
-        <!-- 音声認識結果の仮表示 -->
+        <!-- 音声認識中のプレビュー -->
         <div class="speech-preview">
-            <span class="label">認識中 (ID):</span>
+            <span>聞き取り中: </span>
             <span id="currentSpeech">...</span>
         </div>
 
-        <!-- 通知メッセージエリア -->
+        <!-- 通知 -->
         <div id="notificationArea" class="notification hidden"></div>
-
-        <!-- デバッグログ（非表示） -->
-        <div id="debugLog" style="display:none;"></div>
     </div>
 
-    <script type="module" src="script.js?v=12"></script>
+    <script src="script.js?v=13"></script>
 </body>
 
 </html>
