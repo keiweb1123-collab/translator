@@ -13,7 +13,7 @@ var recognition = null;
 var isRunning = false;
 var buffer = '';          // 音声テキストを溜めるバッファ
 var sendTimer = null;     // バッファ送信用タイマー
-var BATCH_INTERVAL = 3000; // 3秒ごとにまとめて翻訳
+var BATCH_INTERVAL = 2000; // 2秒ごとにまとめて翻訳（速さ重視）
 
 // 音声認識セットアップ
 function setupRecognition() {
