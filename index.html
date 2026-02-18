@@ -69,27 +69,12 @@
         <!-- 通知メッセージエリア -->
         <div id="notificationArea" class="notification hidden"></div>
 
-        <!-- デバッグログエリア -->
-        <div id="debugLog" style="
-            position: fixed;
-            bottom: 0;
-            right: 0;
-            width: 300px;
-            height: 150px;
-            background: rgba(0,0,0,0.8);
-            border: 1px solid #444;
-            color: #0f0;
-            font-size: 10px;
-            overflow-y: scroll;
-            padding: 5px;
-            z-index: 1000;
-            font-family: monospace;
-            pointer-events: none;
-        "></div>
+        <!-- デバッグログは非表示（開発用なので削除） -->
+        <div id="debugLog" style="display:none;"></div>
     </div>
 
     <!-- Transformers.js は script.js 内で動的にインポートするか、ここでESMとして読み込む -->
-    <script type="module" src="script.js?v=10"></script>
+    <script type="module" src="script.js?v=11"></script>
 </body>
 
 </html>
