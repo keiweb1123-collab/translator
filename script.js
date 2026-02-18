@@ -1,277 +1,244 @@
-/* リセット */
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
+// DOM
+var startBtn = document.getElementById('startBtn');
+var stopBtn = document.getElementById('stopBtn');
+var statusDot = document.getElementById('statusDot');
+var translationDisplay = document.getElementById('translationDisplay');
+var currentSpeechEl = document.getElementById('currentSpeech');
+var previewBar = document.getElementById('previewBar');
+var emptyState = document.getElementById('emptyState');
+var notificationArea = document.getElementById('notificationArea');
+
+// 状態
+var recognition = null;
+var isRunning = false;
+var shouldRestart = false;
+var interimTimer = null;
+var lastInterim = '';
+var liveCard = null; // リアルタイム翻訳用のカード
+
+// 画面にステータス表示
+function showStatus(msg, color) {
+    currentSpeechEl.textContent = msg;
+    if (color) currentSpeechEl.style.color = color;
 }
 
-html,
-body {
-    font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
-    background: #0a0a0a;
-    color: #fff;
-    height: 100%;
-    overflow: hidden;
+// 通知
+function showNotification(msg, type) {
+    notificationArea.textContent = msg;
+    notificationArea.className = 'notification ' + (type || 'warning');
+    setTimeout(function () {
+        notificationArea.className = 'notification hidden';
+    }, 5000);
 }
 
-/* === ヘッダー（固定） === */
-header {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 52px;
-    background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 16px;
-    z-index: 10;
-    border-bottom: 1px solid #2a2a4a;
-}
-
-.header-title {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #e0e0ff;
-}
-
-.status-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    transition: background 0.3s;
-}
-
-.status-dot.off {
-    background: #555;
-}
-
-.status-dot.on {
-    background: #00ff88;
-    box-shadow: 0 0 8px #00ff88;
-}
-
-/* === メインエリア（スクロール） === */
-main {
-    position: fixed;
-    top: 52px;
-    bottom: 120px;
-    left: 0;
-    right: 0;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    padding: 12px;
-}
-
-/* 空の状態 */
-.empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    color: #555;
-}
-
-.empty-icon {
-    font-size: 3rem;
-    margin-bottom: 12px;
-}
-
-.empty-text {
-    font-size: 1rem;
-    text-align: center;
-    line-height: 1.6;
-}
-
-/* === 翻訳カード === */
-.translation-card {
-    background: linear-gradient(135deg, #1a1a2e 0%, #1e2a3a 100%);
-    border: 1px solid #2a2a4a;
-    border-radius: 12px;
-    padding: 14px 16px;
-    margin-bottom: 10px;
-    animation: slideUp 0.3s ease-out;
-}
-
-.translation-card.latest {
-    border-color: #4a6fa5;
-    box-shadow: 0 2px 12px rgba(74, 111, 165, 0.2);
-}
-
-.translation-card .en {
-    font-size: 1.4rem;
-    font-weight: 700;
-    line-height: 1.3;
-    color: #fff;
-    margin-bottom: 6px;
-}
-
-.translation-card .id-text {
-    font-size: 0.85rem;
-    color: #7a8a9a;
-    line-height: 1.3;
-}
-
-.translation-card .id-text::before {
-    content: '🇮🇩 ';
-}
-
-/* 過去のカードは少し暗く */
-.translation-card.past {
-    opacity: 0.6;
-}
-
-.translation-card.past .en {
-    font-size: 1.1rem;
-}
-
-/* ライブ翻訳カード（話し中） */
-.translation-card.live {
-    border-color: #00aaff;
-    background: linear-gradient(135deg, #0a1a2e 0%, #0e2a3e 100%);
-    box-shadow: 0 2px 15px rgba(0, 170, 255, 0.25);
-    animation: pulse 1.5s ease-in-out infinite;
-}
-
-.translation-card.live .en {
-    color: #88ddff;
-}
-
-.live-label {
-    font-size: 0.7rem;
-    color: #00aaff;
-    font-weight: 700;
-    margin-bottom: 4px;
-    letter-spacing: 1px;
-}
-
-@keyframes pulse {
-
-    0%,
-    100% {
-        box-shadow: 0 2px 15px rgba(0, 170, 255, 0.15);
+// 音声認識セットアップ
+function setupRecognition() {
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+        showNotification('このブラウザは音声認識に対応していません。Chromeをお使いください。', 'error');
+        return false;
     }
 
-    50% {
-        box-shadow: 0 2px 20px rgba(0, 170, 255, 0.35);
+    recognition = new SR();
+    recognition.lang = 'id-ID';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onstart = function () {
+        statusDot.className = 'status-dot on';
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        previewBar.classList.remove('hidden');
+        isRunning = true;
+        showStatus('🎤 マイクON - 話してください...', '#00ff88');
+    };
+
+    recognition.onend = function () {
+        isRunning = false;
+        // ライブカードが残っていたら確定
+        finalizeLiveCard();
+
+        if (shouldRestart) {
+            showStatus('🔄 再接続中...', '#ffcc00');
+            setTimeout(function () {
+                try { recognition.start(); } catch (e) { resetButtons(); }
+            }, 300);
+        } else {
+            resetButtons();
+        }
+    };
+
+    recognition.onresult = function (event) {
+        var interim = '';
+        var final_text = '';
+
+        for (var i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+                final_text += event.results[i][0].transcript;
+            } else {
+                interim += event.results[i][0].transcript;
+            }
+        }
+
+        // ===== 確定テキスト =====
+        if (final_text.trim()) {
+            showStatus('✅ ' + final_text, '#00ff88');
+            // ライブカードを確定に変換
+            finalizeLiveCard();
+            // 確定翻訳
+            translateAndShow(final_text.trim(), false);
+        }
+
+        // ===== 途中経過テキスト → リアルタイム翻訳 =====
+        if (interim.trim() && interim !== lastInterim) {
+            lastInterim = interim;
+            showStatus('🎤 ' + interim, '#88ccff');
+
+            // 0.8秒間変化がなければ途中翻訳を実行
+            clearTimeout(interimTimer);
+            interimTimer = setTimeout(function () {
+                translateAndShow(interim.trim(), true);
+            }, 800);
+        }
+    };
+
+    recognition.onerror = function (event) {
+        var msg = '';
+        switch (event.error) {
+            case 'not-allowed':
+                msg = '❌ マイクの許可がありません。設定でマイクを許可してください。';
+                shouldRestart = false;
+                break;
+            case 'no-speech':
+                msg = '🔇 音声が検出されません... 大きな声で話すか音量を上げてください';
+                break;
+            case 'audio-capture':
+                msg = '❌ マイクが見つかりません。';
+                shouldRestart = false;
+                break;
+            case 'network':
+                msg = '❌ ネットワークエラー。';
+                break;
+            default:
+                msg = '⚠️ ' + event.error;
+        }
+        showStatus(msg, '#ff4444');
+        showNotification(msg, 'error');
+    };
+
+    return true;
+}
+
+function resetButtons() {
+    statusDot.className = 'status-dot off';
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    showStatus('停止中', '#888');
+}
+
+// ===== 翻訳 & 表示 =====
+function translateAndShow(text, isLive) {
+    var url = 'https://api.mymemory.translated.net/get?q='
+        + encodeURIComponent(text) + '&langpair=id|en';
+
+    fetch(url)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.responseStatus === 200 && data.responseData) {
+                var translated = data.responseData.translatedText;
+                if (isLive) {
+                    updateLiveCard(translated, text);
+                } else {
+                    addCard(translated, text);
+                }
+            }
+        })
+        .catch(function (err) { /* エラーは無視（ライブ翻訳なので） */ });
+}
+
+// ===== ライブカード（話している途中の翻訳） =====
+function updateLiveCard(english, indonesian) {
+    if (emptyState) { emptyState.remove(); emptyState = null; }
+
+    if (!liveCard) {
+        liveCard = document.createElement('div');
+        liveCard.className = 'translation-card live';
+        liveCard.innerHTML = '<div class="live-label">⚡ LIVE</div>'
+            + '<div class="en"></div>'
+            + '<div class="id-text"></div>';
+        translationDisplay.appendChild(liveCard);
+    }
+
+    liveCard.querySelector('.en').textContent = english;
+    liveCard.querySelector('.id-text').textContent = indonesian;
+    translationDisplay.scrollTop = translationDisplay.scrollHeight;
+}
+
+// ライブカードを確定カードに変換
+function finalizeLiveCard() {
+    if (!liveCard) return;
+    var en = liveCard.querySelector('.en').textContent;
+    var id = liveCard.querySelector('.id-text').textContent;
+    liveCard.remove();
+    liveCard = null;
+    if (en && id) {
+        // 確定翻訳で上書きされるので、ここでは追加しない
     }
 }
 
-.translation-card .time-stamp {
-    font-size: 0.7rem;
-    color: #4a5568;
-    margin-top: 6px;
-}
+// ===== 確定カード =====
+function addCard(english, indonesian) {
+    if (emptyState) { emptyState.remove(); emptyState = null; }
 
-@keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translateY(15px);
+    // ライブカードを消す
+    if (liveCard) { liveCard.remove(); liveCard = null; }
+
+    // 既存のカードを過去にする
+    var cards = document.querySelectorAll('.translation-card.latest');
+    for (var i = 0; i < cards.length; i++) {
+        cards[i].classList.remove('latest');
+        cards[i].classList.add('past');
     }
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
+    var card = document.createElement('div');
+    card.className = 'translation-card latest';
+
+    var enDiv = document.createElement('div');
+    enDiv.className = 'en';
+    enDiv.textContent = english;
+
+    var idDiv = document.createElement('div');
+    idDiv.className = 'id-text';
+    idDiv.textContent = indonesian;
+
+    var timeDiv = document.createElement('div');
+    timeDiv.className = 'time-stamp';
+    timeDiv.textContent = new Date().toLocaleTimeString();
+
+    card.appendChild(enDiv);
+    card.appendChild(idDiv);
+    card.appendChild(timeDiv);
+    translationDisplay.appendChild(card);
+    translationDisplay.scrollTop = translationDisplay.scrollHeight;
+}
+
+// ボタン
+startBtn.addEventListener('click', function () {
+    if (!recognition) { if (!setupRecognition()) return; }
+    shouldRestart = true;
+    try {
+        recognition.start();
+        showStatus('🎤 マイクを起動中...', '#ffcc00');
+    } catch (e) {
+        showNotification('マイク起動エラー: ' + e.message, 'error');
     }
-}
+});
 
-/* === フッター（固定） === */
-footer {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: #111;
-    border-top: 1px solid #2a2a4a;
-    z-index: 10;
-}
+stopBtn.addEventListener('click', function () {
+    shouldRestart = false;
+    if (recognition) recognition.stop();
+    resetButtons();
+});
 
-.preview-bar {
-    padding: 8px 14px;
-    font-size: 1rem;
-    color: #00ff88;
-    background: #0d1a0d;
-    border-bottom: 1px solid #1a3a1a;
-    max-height: 80px;
-    overflow: hidden;
-    font-weight: 600;
-}
-
-.button-area {
-    display: flex;
-    gap: 10px;
-    padding: 10px 14px;
-    padding-bottom: max(10px, env(safe-area-inset-bottom));
-}
-
-.btn-start,
-.btn-stop {
-    flex: 1;
-    padding: 14px;
-    border: none;
-    border-radius: 10px;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    -webkit-appearance: none;
-}
-
-.btn-start {
-    background: linear-gradient(135deg, #0055ff 0%, #0088ff 100%);
-    color: #fff;
-}
-
-.btn-start:disabled {
-    background: #222;
-    color: #555;
-}
-
-.btn-stop {
-    background: linear-gradient(135deg, #cc0000 0%, #ff2222 100%);
-    color: #fff;
-}
-
-.btn-stop:disabled {
-    background: #222;
-    color: #555;
-}
-
-/* === 通知 === */
-.notification {
-    position: fixed;
-    top: 60px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.85rem;
-    z-index: 100;
-    animation: fadeIn 0.3s;
-}
-
-.notification.warning {
-    background: #ffcc00;
-    color: #000;
-}
-
-.notification.error {
-    background: #ff3333;
-    color: #fff;
-}
-
-.hidden {
-    display: none;
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-    }
-
-    to {
-        opacity: 1;
-    }
-}
+// 初期化
+showStatus('「翻訳開始」を押してください', '#888');
