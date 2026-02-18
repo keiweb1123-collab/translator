@@ -12,13 +12,17 @@ var notificationArea = document.getElementById('notificationArea');
 var recognition = null;
 var isRunning = false;
 var shouldRestart = false;
-var interimTimer = null;
 var liveCard = null;
-var lastTranslatedText = '';
-var restartCount = 0;
+var lastFinalCard = '';
 
 // Android判定
 var isAndroid = /Android/i.test(navigator.userAgent);
+
+// Android用: テキストを溜めて一つにまとめる
+var accumulatedText = '';
+var finalizeTimer = null;
+var FINALIZE_DELAY = 3000; // 3秒間沈黙したら確定
+var translateTimer = null;
 
 // ステータス表示
 function showStatus(msg, color) {
@@ -26,7 +30,6 @@ function showStatus(msg, color) {
     if (color) currentSpeechEl.style.color = color;
 }
 
-// 通知
 function showNotification(msg, type) {
     notificationArea.textContent = msg;
     notificationArea.className = 'notification ' + (type || 'warning');
@@ -35,11 +38,10 @@ function showNotification(msg, type) {
     }, 4000);
 }
 
-// Google翻訳（無料、APIキー不要）
+// Google翻訳
 function translate(text, callback) {
     var url = 'https://translate.googleapis.com/translate_a/single?client=gtx'
         + '&sl=id&tl=en&dt=t&q=' + encodeURIComponent(text);
-
     fetch(url)
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -54,7 +56,7 @@ function translate(text, callback) {
         .catch(function () { });
 }
 
-// 音声認識セットアップ
+// 音声認識
 function setupRecognition() {
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
@@ -66,8 +68,6 @@ function setupRecognition() {
     recognition.lang = 'id-ID';
     recognition.interimResults = true;
 
-    // Androidでは continuous が不安定なので、
-    // 短い認識を繰り返す方式にする
     if (isAndroid) {
         recognition.continuous = false;
     } else {
@@ -80,30 +80,26 @@ function setupRecognition() {
         stopBtn.disabled = false;
         previewBar.classList.remove('hidden');
         isRunning = true;
-        if (restartCount === 0) {
-            showStatus('🎤 話してください...', '#00ff88');
-        }
+        showStatus('🎤 話してください...', '#00ff88');
     };
 
     recognition.onend = function () {
         isRunning = false;
-
-        // 自動再起動（停止ボタンを押していない限り）
         if (shouldRestart) {
-            restartCount++;
-            // Androidでは少し待ってから再起動（安定性のため）
-            var delay = isAndroid ? 100 : 200;
+            var delay = isAndroid ? 50 : 200;
             setTimeout(function () {
-                try {
-                    recognition.start();
-                } catch (e) {
-                    // すでに起動中の場合のエラーは無視
+                try { recognition.start(); }
+                catch (e) {
                     setTimeout(function () {
                         try { recognition.start(); } catch (e2) { resetButtons(); }
                     }, 500);
                 }
             }, delay);
         } else {
+            // 停止時、溜まったテキストを確定
+            if (accumulatedText.trim()) {
+                finalizeAccumulated();
+            }
             resetButtons();
         }
     };
@@ -120,66 +116,92 @@ function setupRecognition() {
             }
         }
 
-        // 確定テキスト
-        if (final_text.trim()) {
-            var text = final_text.trim();
-            showStatus('✅ ' + text, '#00ff88');
+        if (isAndroid) {
+            // === Android方式 ===
+            // Androidでは「確定」が細切れに来るので、
+            // 全部を溜めて1つのライブカードで表示し、
+            // 3秒沈黙で確定する
 
-            // 重複チェック
-            if (text === lastTranslatedText) return;
-            lastTranslatedText = text;
+            if (final_text.trim()) {
+                accumulatedText += ' ' + final_text.trim();
+                showStatus('🎤 ' + accumulatedText.trim(), '#88ccff');
 
-            removeLiveCard();
-            clearTimeout(interimTimer);
+                // ライブ翻訳（更新）
+                clearTimeout(translateTimer);
+                translateTimer = setTimeout(function () {
+                    var textToTranslate = accumulatedText.trim();
+                    translate(textToTranslate, function (translated) {
+                        updateLiveCard(translated, textToTranslate);
+                    });
+                }, 300);
 
-            translate(text, function (translated) {
-                addCard(translated, text);
-            });
-        }
+                // 3秒沈黙で確定
+                clearTimeout(finalizeTimer);
+                finalizeTimer = setTimeout(function () {
+                    finalizeAccumulated();
+                }, FINALIZE_DELAY);
+            }
 
-        // 途中経過 → ライブ翻訳
-        if (interim.trim()) {
-            showStatus('🎤 ' + interim, '#88ccff');
-            clearTimeout(interimTimer);
-            interimTimer = setTimeout(function () {
-                translate(interim.trim(), function (translated) {
-                    updateLiveCard(translated, interim.trim());
+            if (interim.trim()) {
+                showStatus('🎤 ' + accumulatedText + ' ' + interim, '#88ccff');
+            }
+
+        } else {
+            // === PC方式（従来通り） ===
+            if (final_text.trim()) {
+                var text = final_text.trim();
+                showStatus('✅ ' + text, '#00ff88');
+                if (text === lastFinalCard) return;
+                lastFinalCard = text;
+                removeLiveCard();
+                translate(text, function (translated) {
+                    addCard(translated, text);
                 });
-            }, 800);
+            }
+
+            if (interim.trim()) {
+                showStatus('🎤 ' + interim, '#88ccff');
+                clearTimeout(translateTimer);
+                translateTimer = setTimeout(function () {
+                    translate(interim.trim(), function (translated) {
+                        updateLiveCard(translated, interim.trim());
+                    });
+                }, 800);
+            }
         }
     };
 
     recognition.onerror = function (event) {
-        // no-speech は Android で頻繁に起きるので無視
-        if (event.error === 'no-speech') {
-            showStatus('🎤 聞き取り中...音量を上げてみてください', '#ffcc00');
-            return;
-        }
-        if (event.error === 'aborted') return; // 再起動時に出る
-
+        if (event.error === 'no-speech' || event.error === 'aborted') return;
         var msg = '';
         switch (event.error) {
             case 'not-allowed':
-                msg = '❌ マイクを許可してください（ブラウザの設定で「マイク」→「許可」）';
-                shouldRestart = false;
-                break;
+                msg = '❌ マイクを許可してください';
+                shouldRestart = false; break;
             case 'audio-capture':
                 msg = '❌ マイクが見つかりません';
-                shouldRestart = false;
-                break;
-            case 'network':
-                msg = '❌ ネットワークエラー';
-                break;
+                shouldRestart = false; break;
             default:
                 msg = '⚠️ ' + event.error;
         }
-        if (msg) {
-            showStatus(msg, '#ff4444');
-            showNotification(msg, 'error');
-        }
+        if (msg) showStatus(msg, '#ff4444');
     };
 
     return true;
+}
+
+// 溜まったテキストを確定カードにする
+function finalizeAccumulated() {
+    var text = accumulatedText.trim();
+    accumulatedText = '';
+    clearTimeout(finalizeTimer);
+    clearTimeout(translateTimer);
+    if (!text) return;
+
+    removeLiveCard();
+    translate(text, function (translated) {
+        addCard(translated, text);
+    });
 }
 
 function resetButtons() {
@@ -187,10 +209,9 @@ function resetButtons() {
     startBtn.disabled = false;
     stopBtn.disabled = true;
     showStatus('停止中', '#888');
-    restartCount = 0;
 }
 
-// ライブカード
+// ライブカード（1つだけ、常に上書き更新）
 function updateLiveCard(english, indonesian) {
     if (emptyState) { emptyState.remove(); emptyState = null; }
     if (!liveCard) {
@@ -241,25 +262,22 @@ function addCard(english, indonesian) {
     card.appendChild(timeDiv);
     translationDisplay.appendChild(card);
     translationDisplay.scrollTop = translationDisplay.scrollHeight;
+    lastFinalCard = indonesian;
 }
 
 // ボタン
 startBtn.addEventListener('click', function () {
     if (!recognition) { if (!setupRecognition()) return; }
     shouldRestart = true;
-    restartCount = 0;
-    try {
-        recognition.start();
-    } catch (e) {
-        showNotification('起動エラー: ' + e.message, 'error');
-    }
+    accumulatedText = '';
+    try { recognition.start(); }
+    catch (e) { showNotification('起動エラー', 'error'); }
 });
 
 stopBtn.addEventListener('click', function () {
     shouldRestart = false;
-    if (recognition) {
-        try { recognition.abort(); } catch (e) { }
-    }
+    try { recognition.abort(); } catch (e) { }
+    if (accumulatedText.trim()) finalizeAccumulated();
     removeLiveCard();
     resetButtons();
 });
