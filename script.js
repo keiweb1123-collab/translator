@@ -13,10 +13,10 @@ var recognition = null;
 var isRunning = false;
 var shouldRestart = false;
 var interimTimer = null;
-var lastInterim = '';
-var liveCard = null; // リアルタイム翻訳用のカード
+var liveCard = null;
+var lastTranslatedText = ''; // 重複防止用
 
-// 画面にステータス表示
+// ステータス表示
 function showStatus(msg, color) {
     currentSpeechEl.textContent = msg;
     if (color) currentSpeechEl.style.color = color;
@@ -31,11 +31,31 @@ function showNotification(msg, type) {
     }, 5000);
 }
 
-// 音声認識セットアップ
+// Google翻訳（無料エンドポイント、APIキー不要）
+function translate(text, callback) {
+    var url = 'https://translate.googleapis.com/translate_a/single?client=gtx'
+        + '&sl=id&tl=en&dt=t&q=' + encodeURIComponent(text);
+
+    fetch(url)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            // レスポンス: [[["translated","original",...],...]...]
+            var result = '';
+            if (data && data[0]) {
+                for (var i = 0; i < data[0].length; i++) {
+                    if (data[0][i][0]) result += data[0][i][0];
+                }
+            }
+            if (result) callback(result);
+        })
+        .catch(function (err) { /* 静かに失敗 */ });
+}
+
+// 音声認識
 function setupRecognition() {
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-        showNotification('このブラウザは音声認識に対応していません。Chromeをお使いください。', 'error');
+        showNotification('Chromeブラウザをお使いください', 'error');
         return false;
     }
 
@@ -50,16 +70,12 @@ function setupRecognition() {
         stopBtn.disabled = false;
         previewBar.classList.remove('hidden');
         isRunning = true;
-        showStatus('🎤 マイクON - 話してください...', '#00ff88');
+        showStatus('🎤 話してください...', '#00ff88');
     };
 
     recognition.onend = function () {
         isRunning = false;
-        // ライブカードが残っていたら確定
-        finalizeLiveCard();
-
         if (shouldRestart) {
-            showStatus('🔄 再接続中...', '#ffcc00');
             setTimeout(function () {
                 try { recognition.start(); } catch (e) { resetButtons(); }
             }, 300);
@@ -82,23 +98,31 @@ function setupRecognition() {
 
         // ===== 確定テキスト =====
         if (final_text.trim()) {
-            showStatus('✅ ' + final_text, '#00ff88');
-            // ライブカードを確定に変換
-            finalizeLiveCard();
-            // 確定翻訳
-            translateAndShow(final_text.trim(), false);
+            var text = final_text.trim();
+            showStatus('✅ ' + text, '#00ff88');
+
+            // 重複チェック：前回と同じテキストなら無視
+            if (text === lastTranslatedText) return;
+            lastTranslatedText = text;
+
+            // ライブカードを消して確定翻訳
+            removeLiveCard();
+            clearTimeout(interimTimer);
+
+            translate(text, function (translated) {
+                addCard(translated, text);
+            });
         }
 
-        // ===== 途中経過テキスト → リアルタイム翻訳 =====
-        if (interim.trim() && interim !== lastInterim) {
-            lastInterim = interim;
+        // ===== 途中経過 → ライブ翻訳 =====
+        if (interim.trim()) {
             showStatus('🎤 ' + interim, '#88ccff');
-
-            // 0.8秒間変化がなければ途中翻訳を実行
             clearTimeout(interimTimer);
             interimTimer = setTimeout(function () {
-                translateAndShow(interim.trim(), true);
-            }, 800);
+                translate(interim.trim(), function (translated) {
+                    updateLiveCard(translated, interim.trim());
+                });
+            }, 1000);
         }
     };
 
@@ -106,24 +130,18 @@ function setupRecognition() {
         var msg = '';
         switch (event.error) {
             case 'not-allowed':
-                msg = '❌ マイクの許可がありません。設定でマイクを許可してください。';
-                shouldRestart = false;
-                break;
+                msg = '❌ マイクを許可してください';
+                shouldRestart = false; break;
             case 'no-speech':
-                msg = '🔇 音声が検出されません... 大きな声で話すか音量を上げてください';
+                msg = '🔇 音声が聞こえません...音量を上げてください';
                 break;
             case 'audio-capture':
-                msg = '❌ マイクが見つかりません。';
-                shouldRestart = false;
-                break;
-            case 'network':
-                msg = '❌ ネットワークエラー。';
-                break;
+                msg = '❌ マイクが見つかりません';
+                shouldRestart = false; break;
             default:
                 msg = '⚠️ ' + event.error;
         }
         showStatus(msg, '#ff4444');
-        showNotification(msg, 'error');
     };
 
     return true;
@@ -136,27 +154,7 @@ function resetButtons() {
     showStatus('停止中', '#888');
 }
 
-// ===== 翻訳 & 表示 =====
-function translateAndShow(text, isLive) {
-    var url = 'https://api.mymemory.translated.net/get?q='
-        + encodeURIComponent(text) + '&langpair=id|en';
-
-    fetch(url)
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            if (data.responseStatus === 200 && data.responseData) {
-                var translated = data.responseData.translatedText;
-                if (isLive) {
-                    updateLiveCard(translated, text);
-                } else {
-                    addCard(translated, text);
-                }
-            }
-        })
-        .catch(function (err) { /* エラーは無視（ライブ翻訳なので） */ });
-}
-
-// ===== ライブカード（話している途中の翻訳） =====
+// ===== ライブカード =====
 function updateLiveCard(english, indonesian) {
     if (emptyState) { emptyState.remove(); emptyState = null; }
 
@@ -174,26 +172,16 @@ function updateLiveCard(english, indonesian) {
     translationDisplay.scrollTop = translationDisplay.scrollHeight;
 }
 
-// ライブカードを確定カードに変換
-function finalizeLiveCard() {
-    if (!liveCard) return;
-    var en = liveCard.querySelector('.en').textContent;
-    var id = liveCard.querySelector('.id-text').textContent;
-    liveCard.remove();
-    liveCard = null;
-    if (en && id) {
-        // 確定翻訳で上書きされるので、ここでは追加しない
-    }
+function removeLiveCard() {
+    if (liveCard) { liveCard.remove(); liveCard = null; }
 }
 
 // ===== 確定カード =====
 function addCard(english, indonesian) {
     if (emptyState) { emptyState.remove(); emptyState = null; }
+    removeLiveCard();
 
-    // ライブカードを消す
-    if (liveCard) { liveCard.remove(); liveCard = null; }
-
-    // 既存のカードを過去にする
+    // 既存のlatestを過去にする
     var cards = document.querySelectorAll('.translation-card.latest');
     for (var i = 0; i < cards.length; i++) {
         cards[i].classList.remove('latest');
@@ -228,17 +216,16 @@ startBtn.addEventListener('click', function () {
     shouldRestart = true;
     try {
         recognition.start();
-        showStatus('🎤 マイクを起動中...', '#ffcc00');
     } catch (e) {
-        showNotification('マイク起動エラー: ' + e.message, 'error');
+        showNotification('起動エラー: ' + e.message, 'error');
     }
 });
 
 stopBtn.addEventListener('click', function () {
     shouldRestart = false;
     if (recognition) recognition.stop();
+    removeLiveCard();
     resetButtons();
 });
 
-// 初期化
 showStatus('「翻訳開始」を押してください', '#888');
