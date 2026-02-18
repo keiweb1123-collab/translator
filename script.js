@@ -1,4 +1,9 @@
-// DOM
+/*
+ * リアルタイム翻訳ツール - 最終版
+ * PC・Android両対応
+ */
+
+// ===== DOM =====
 var startBtn = document.getElementById('startBtn');
 var stopBtn = document.getElementById('stopBtn');
 var statusDot = document.getElementById('statusDot');
@@ -8,37 +13,33 @@ var previewBar = document.getElementById('previewBar');
 var emptyState = document.getElementById('emptyState');
 var notificationArea = document.getElementById('notificationArea');
 
-// 状態
-var recognition = null;
-var isRunning = false;
-var shouldRestart = false;
-var liveCard = null;
-var lastFinalCard = '';
-
-// Android判定
+// ===== 設定 =====
 var isAndroid = /Android/i.test(navigator.userAgent);
+var recognition = null;
+var shouldRestart = false;
 
-// Android用: テキストを溜めて一つにまとめる
-var accumulatedText = '';
-var finalizeTimer = null;
-var FINALIZE_DELAY = 3000; // 3秒間沈黙したら確定
-var translateTimer = null;
+// 翻訳管理
+var currentText = '';       // 今聞いている文章（最新版）
+var liveCard = null;        // 画面上の1枚のライブカード
+var doneTexts = [];         // 確定済みテキスト（重複防止）
+var silenceTimer = null;    // 沈黙検知タイマー
+var liveTranslateTimer = null;
 
-// ステータス表示
+// ===== ユーティリティ =====
 function showStatus(msg, color) {
     currentSpeechEl.textContent = msg;
     if (color) currentSpeechEl.style.color = color;
 }
 
-function showNotification(msg, type) {
+function showNotification(msg) {
     notificationArea.textContent = msg;
-    notificationArea.className = 'notification ' + (type || 'warning');
+    notificationArea.className = 'notification warning';
     setTimeout(function () {
         notificationArea.className = 'notification hidden';
     }, 4000);
 }
 
-// Google翻訳
+// ===== Google翻訳 =====
 function translate(text, callback) {
     var url = 'https://translate.googleapis.com/translate_a/single?client=gtx'
         + '&sl=id&tl=en&dt=t&q=' + encodeURIComponent(text);
@@ -48,7 +49,7 @@ function translate(text, callback) {
             var result = '';
             if (data && data[0]) {
                 for (var i = 0; i < data[0].length; i++) {
-                    if (data[0][i][0]) result += data[0][i][0];
+                    if (data[0][i] && data[0][i][0]) result += data[0][i][0];
                 }
             }
             if (result) callback(result);
@@ -56,164 +57,171 @@ function translate(text, callback) {
         .catch(function () { });
 }
 
-// 音声認識
+// ===== 音声認識 =====
 function setupRecognition() {
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-        showNotification('Chromeブラウザをお使いください', 'error');
+        showNotification('Chromeブラウザが必要です');
         return false;
     }
 
     recognition = new SR();
     recognition.lang = 'id-ID';
     recognition.interimResults = true;
-
-    if (isAndroid) {
-        recognition.continuous = false;
-    } else {
-        recognition.continuous = true;
-    }
+    recognition.continuous = !isAndroid; // Android=false, PC=true
+    recognition.maxAlternatives = 1;
 
     recognition.onstart = function () {
         statusDot.className = 'status-dot on';
         startBtn.disabled = true;
         stopBtn.disabled = false;
         previewBar.classList.remove('hidden');
-        isRunning = true;
         showStatus('🎤 話してください...', '#00ff88');
     };
 
     recognition.onend = function () {
-        isRunning = false;
         if (shouldRestart) {
-            var delay = isAndroid ? 50 : 200;
+            // 超高速で再起動（ユーザーには途切れないように見せる）
             setTimeout(function () {
-                try { recognition.start(); }
-                catch (e) {
+                try { recognition.start(); } catch (e) {
                     setTimeout(function () {
-                        try { recognition.start(); } catch (e2) { resetButtons(); }
+                        try { recognition.start(); } catch (e2) { fullStop(); }
                     }, 500);
                 }
-            }, delay);
+            }, 50);
         } else {
-            // 停止時、溜まったテキストを確定
-            if (accumulatedText.trim()) {
-                finalizeAccumulated();
-            }
-            resetButtons();
+            // 完全停止
+            finalizeCurrent();
+            fullStop();
         }
     };
 
     recognition.onresult = function (event) {
-        var interim = '';
-        var final_text = '';
+        // 最新の結果だけを使う（古い結果は無視 → 重複防止）
+        var latestResult = event.results[event.results.length - 1];
+        var text = latestResult[0].transcript.trim();
+        var isFinal = latestResult.isFinal;
 
-        for (var i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) {
-                final_text += event.results[i][0].transcript;
-            } else {
-                interim += event.results[i][0].transcript;
-            }
-        }
+        if (!text) return;
 
         if (isAndroid) {
-            // === Android方式 ===
-            // Androidでは「確定」が細切れに来るので、
-            // 全部を溜めて1つのライブカードで表示し、
-            // 3秒沈黙で確定する
-
-            if (final_text.trim()) {
-                accumulatedText += ' ' + final_text.trim();
-                showStatus('🎤 ' + accumulatedText.trim(), '#88ccff');
-
-                // ライブ翻訳（更新）
-                clearTimeout(translateTimer);
-                translateTimer = setTimeout(function () {
-                    var textToTranslate = accumulatedText.trim();
-                    translate(textToTranslate, function (translated) {
-                        updateLiveCard(translated, textToTranslate);
-                    });
-                }, 300);
-
-                // 3秒沈黙で確定
-                clearTimeout(finalizeTimer);
-                finalizeTimer = setTimeout(function () {
-                    finalizeAccumulated();
-                }, FINALIZE_DELAY);
-            }
-
-            if (interim.trim()) {
-                showStatus('🎤 ' + accumulatedText + ' ' + interim, '#88ccff');
-            }
-
+            handleAndroidResult(text, isFinal);
         } else {
-            // === PC方式（従来通り） ===
-            if (final_text.trim()) {
-                var text = final_text.trim();
-                showStatus('✅ ' + text, '#00ff88');
-                if (text === lastFinalCard) return;
-                lastFinalCard = text;
-                removeLiveCard();
-                translate(text, function (translated) {
-                    addCard(translated, text);
-                });
-            }
-
-            if (interim.trim()) {
-                showStatus('🎤 ' + interim, '#88ccff');
-                clearTimeout(translateTimer);
-                translateTimer = setTimeout(function () {
-                    translate(interim.trim(), function (translated) {
-                        updateLiveCard(translated, interim.trim());
-                    });
-                }, 800);
-            }
+            handlePCResult(text, isFinal);
         }
     };
 
     recognition.onerror = function (event) {
         if (event.error === 'no-speech' || event.error === 'aborted') return;
-        var msg = '';
-        switch (event.error) {
-            case 'not-allowed':
-                msg = '❌ マイクを許可してください';
-                shouldRestart = false; break;
-            case 'audio-capture':
-                msg = '❌ マイクが見つかりません';
-                shouldRestart = false; break;
-            default:
-                msg = '⚠️ ' + event.error;
+        if (event.error === 'not-allowed') {
+            showStatus('❌ マイクを許可してください', '#ff4444');
+            showNotification('ブラウザのアドレスバー横の鍵マーク → マイク → 許可');
+            shouldRestart = false;
+            return;
         }
-        if (msg) showStatus(msg, '#ff4444');
+        if (event.error === 'network') {
+            showStatus('❌ ネット接続を確認してください', '#ff4444');
+            return;
+        }
     };
 
     return true;
 }
 
-// 溜まったテキストを確定カードにする
-function finalizeAccumulated() {
-    var text = accumulatedText.trim();
-    accumulatedText = '';
-    clearTimeout(finalizeTimer);
-    clearTimeout(translateTimer);
-    if (!text) return;
+// ===== Android用の処理 =====
+// Androidでは各セッションで1つの結果が返される
+// "Saya"(session1) → "selalu"(session2) → "bilang"(session3)
+// これらを1つの文としてまとめる
+function handleAndroidResult(text, isFinal) {
+    if (isFinal) {
+        // 新しいテキストを追加（重複チェック付き）
+        if (currentText && !currentText.endsWith(text)) {
+            currentText = currentText + ' ' + text;
+        } else if (!currentText) {
+            currentText = text;
+        }
+
+        showStatus('🎤 ' + currentText, '#88ccff');
+
+        // ライブ翻訳（0.5秒後に更新）
+        clearTimeout(liveTranslateTimer);
+        liveTranslateTimer = setTimeout(function () {
+            var finalText = currentText;
+            translate(finalText, function (translated) {
+                showLiveCard(translated, finalText);
+            });
+        }, 500);
+
+        // 3秒沈黙で確定
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(function () {
+            finalizeCurrent();
+        }, 3000);
+    } else {
+        // 途中経過はステータスのみ表示
+        var display = currentText ? currentText + ' ' + text : text;
+        showStatus('🎤 ' + display, '#88ccff');
+    }
+}
+
+// ===== PC用の処理 =====
+function handlePCResult(text, isFinal) {
+    if (isFinal) {
+        // 重複チェック
+        if (isDuplicate(text)) return;
+
+        showStatus('✅ ' + text, '#00ff88');
+        removeLiveCard();
+        clearTimeout(liveTranslateTimer);
+
+        translate(text, function (translated) {
+            addFinalCard(translated, text);
+        });
+    } else {
+        // 途中経過 → ライブ翻訳
+        showStatus('🎤 ' + text, '#88ccff');
+        clearTimeout(liveTranslateTimer);
+        liveTranslateTimer = setTimeout(function () {
+            translate(text, function (translated) {
+                showLiveCard(translated, text);
+            });
+        }, 800);
+    }
+}
+
+// ===== 重複チェック =====
+function isDuplicate(text) {
+    for (var i = 0; i < doneTexts.length; i++) {
+        // 完全一致 or 含まれている場合は重複
+        if (doneTexts[i] === text || doneTexts[i].indexOf(text) >= 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// ===== 今のテキストを確定カードにする =====
+function finalizeCurrent() {
+    var text = currentText.trim();
+    currentText = '';
+    clearTimeout(silenceTimer);
+    clearTimeout(liveTranslateTimer);
+
+    if (!text || isDuplicate(text)) {
+        removeLiveCard();
+        return;
+    }
 
     removeLiveCard();
     translate(text, function (translated) {
-        addCard(translated, text);
+        addFinalCard(translated, text);
     });
 }
 
-function resetButtons() {
-    statusDot.className = 'status-dot off';
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
-    showStatus('停止中', '#888');
-}
-
-// ライブカード（1つだけ、常に上書き更新）
-function updateLiveCard(english, indonesian) {
+// ===== ライブカード（1枚だけ、常に上書き） =====
+function showLiveCard(english, indonesian) {
     if (emptyState) { emptyState.remove(); emptyState = null; }
+
     if (!liveCard) {
         liveCard = document.createElement('div');
         liveCard.className = 'translation-card live';
@@ -222,20 +230,30 @@ function updateLiveCard(english, indonesian) {
             + '<div class="id-text"></div>';
         translationDisplay.appendChild(liveCard);
     }
+
+    // 常に同じカードの中身を更新（新しいカードは作らない）
     liveCard.querySelector('.en').textContent = english;
     liveCard.querySelector('.id-text').textContent = indonesian;
     translationDisplay.scrollTop = translationDisplay.scrollHeight;
 }
 
 function removeLiveCard() {
-    if (liveCard) { liveCard.remove(); liveCard = null; }
+    if (liveCard) {
+        liveCard.remove();
+        liveCard = null;
+    }
 }
 
-// 確定カード
-function addCard(english, indonesian) {
+// ===== 確定カード =====
+function addFinalCard(english, indonesian) {
     if (emptyState) { emptyState.remove(); emptyState = null; }
     removeLiveCard();
 
+    // 重複防止リストに追加（最大20件）
+    doneTexts.push(indonesian);
+    if (doneTexts.length > 20) doneTexts.shift();
+
+    // 既存のlatestを過去にする
     var cards = document.querySelectorAll('.translation-card.latest');
     for (var i = 0; i < cards.length; i++) {
         cards[i].classList.remove('latest');
@@ -262,24 +280,60 @@ function addCard(english, indonesian) {
     card.appendChild(timeDiv);
     translationDisplay.appendChild(card);
     translationDisplay.scrollTop = translationDisplay.scrollHeight;
-    lastFinalCard = indonesian;
 }
 
-// ボタン
+// ===== 完全停止 =====
+function fullStop() {
+    statusDot.className = 'status-dot off';
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    showStatus('停止中', '#888');
+}
+
+// ===== ページの可視性変更（タブ切替・画面ロック対応） =====
+document.addEventListener('visibilitychange', function () {
+    if (document.hidden && shouldRestart) {
+        // 画面が消えたら一時停止（バッテリー節約）
+        try { recognition.abort(); } catch (e) { }
+    } else if (!document.hidden && shouldRestart) {
+        // 画面が戻ったら再開
+        setTimeout(function () {
+            try { recognition.start(); } catch (e) { }
+        }, 500);
+    }
+});
+
+// ===== ボタン =====
 startBtn.addEventListener('click', function () {
-    if (!recognition) { if (!setupRecognition()) return; }
+    if (!recognition) {
+        if (!setupRecognition()) return;
+    }
     shouldRestart = true;
-    accumulatedText = '';
-    try { recognition.start(); }
-    catch (e) { showNotification('起動エラー', 'error'); }
+    currentText = '';
+    doneTexts = [];
+    try {
+        recognition.start();
+    } catch (e) {
+        // 既に動いている場合は再起動
+        try { recognition.abort(); } catch (e2) { }
+        setTimeout(function () {
+            try { recognition.start(); } catch (e3) { }
+        }, 300);
+    }
 });
 
 stopBtn.addEventListener('click', function () {
     shouldRestart = false;
+    clearTimeout(silenceTimer);
+    clearTimeout(liveTranslateTimer);
     try { recognition.abort(); } catch (e) { }
-    if (accumulatedText.trim()) finalizeAccumulated();
+    finalizeCurrent();
     removeLiveCard();
-    resetButtons();
+    fullStop();
 });
 
+// ===== 初期表示 =====
 showStatus('「翻訳開始」を押してください', '#888');
+if (isAndroid) {
+    showNotification('Android版: 音量を上げるとよく聞こえます');
+}
