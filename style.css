@@ -1,4 +1,4 @@
-/* 基本 */
+/* リセット */
 * {
     box-sizing: border-box;
     margin: 0;
@@ -7,101 +7,230 @@
 
 html,
 body {
-    background: #000;
+    font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+    background: #0a0a0a;
     color: #fff;
-    font-family: 'Helvetica Neue', Arial, sans-serif;
-    min-height: 100%;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
+    height: 100%;
+    overflow: hidden;
 }
 
-.container {
+/* === ヘッダー（固定） === */
+header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 52px;
+    background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    z-index: 10;
+    border-bottom: 1px solid #2a2a4a;
+}
+
+.header-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #e0e0ff;
+}
+
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    transition: background 0.3s;
+}
+
+.status-dot.off {
+    background: #555;
+}
+
+.status-dot.on {
+    background: #00ff88;
+    box-shadow: 0 0 8px #00ff88;
+}
+
+/* === メインエリア（スクロール） === */
+main {
+    position: fixed;
+    top: 52px;
+    bottom: 120px;
+    left: 0;
+    right: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     padding: 12px;
 }
 
-/* ステータス */
-.controls {
-    padding: 8px 0;
-    border-bottom: 1px solid #333;
-    font-size: 0.85rem;
-    color: #aaa;
-}
-
-/* ボタン */
-.action-buttons {
+/* 空の状態 */
+.empty-state {
     display: flex;
-    gap: 12px;
-    padding: 12px 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #555;
 }
 
-button {
-    background: #333;
-    color: #fff;
-    border: none;
-    padding: 12px 28px;
-    border-radius: 6px;
+.empty-icon {
+    font-size: 3rem;
+    margin-bottom: 12px;
+}
+
+.empty-text {
     font-size: 1rem;
+    text-align: center;
+    line-height: 1.6;
+}
+
+/* === 翻訳カード === */
+.translation-card {
+    background: linear-gradient(135deg, #1a1a2e 0%, #1e2a3a 100%);
+    border: 1px solid #2a2a4a;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    animation: slideUp 0.3s ease-out;
+}
+
+.translation-card.latest {
+    border-color: #4a6fa5;
+    box-shadow: 0 2px 12px rgba(74, 111, 165, 0.2);
+}
+
+.translation-card .en {
+    font-size: 1.4rem;
+    font-weight: 700;
+    line-height: 1.3;
+    color: #fff;
+    margin-bottom: 6px;
+}
+
+.translation-card .id-text {
+    font-size: 0.85rem;
+    color: #7a8a9a;
+    line-height: 1.3;
+}
+
+.translation-card .id-text::before {
+    content: '🇮🇩 ';
+}
+
+/* 過去のカードは少し暗く */
+.translation-card.past {
+    opacity: 0.6;
+}
+
+.translation-card.past .en {
+    font-size: 1.1rem;
+}
+
+.translation-card .time-stamp {
+    font-size: 0.7rem;
+    color: #4a5568;
+    margin-top: 6px;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(15px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* === フッター（固定） === */
+footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #111;
+    border-top: 1px solid #2a2a4a;
+    z-index: 10;
+}
+
+.preview-bar {
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    color: #7a8a9a;
+    background: #0d0d0d;
+    border-bottom: 1px solid #222;
+    max-height: 50px;
+    overflow: hidden;
+}
+
+.button-area {
+    display: flex;
+    gap: 10px;
+    padding: 10px 14px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
+
+.btn-start,
+.btn-stop {
+    flex: 1;
+    padding: 14px;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 600;
     cursor: pointer;
     -webkit-appearance: none;
 }
 
-button:disabled {
+.btn-start {
+    background: linear-gradient(135deg, #0055ff 0%, #0088ff 100%);
+    color: #fff;
+}
+
+.btn-start:disabled {
     background: #222;
     color: #555;
 }
 
-#startBtn {
-    background: #0055ff;
-}
-
-#stopBtn {
-    background: #cc0000;
-}
-
-/* 翻訳結果エリア */
-#translationDisplay {
-    padding: 10px 0;
-    min-height: 200px;
-}
-
-.placeholder-text {
-    color: #555;
-    font-size: 1.1rem;
-    text-align: center;
-    padding: 40px 0;
-}
-
-/* 翻訳アイテム */
-.translation-item {
-    margin-bottom: 20px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid #222;
-    animation: fadeIn 0.3s;
-}
-
-.translation-en {
-    font-size: 1.6rem;
-    font-weight: bold;
-    line-height: 1.3;
+.btn-stop {
+    background: linear-gradient(135deg, #cc0000 0%, #ff2222 100%);
     color: #fff;
 }
 
-.translation-id {
-    font-size: 0.95rem;
-    color: #888;
-    margin-top: 4px;
-    font-style: italic;
-}
-
-/* 過去の履歴は薄く */
-.translation-item.history .translation-en {
-    color: #999;
-    font-size: 1.2rem;
-}
-
-.translation-item.history .translation-id {
+.btn-stop:disabled {
+    background: #222;
     color: #555;
+}
+
+/* === 通知 === */
+.notification {
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
     font-size: 0.85rem;
+    z-index: 100;
+    animation: fadeIn 0.3s;
+}
+
+.notification.warning {
+    background: #ffcc00;
+    color: #000;
+}
+
+.notification.error {
+    background: #ff3333;
+    color: #fff;
+}
+
+.hidden {
+    display: none;
 }
 
 @keyframes fadeIn {
@@ -112,45 +241,4 @@ button:disabled {
     to {
         opacity: 1;
     }
-}
-
-/* 音声認識プレビュー */
-.speech-preview {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: #111;
-    border-top: 1px solid #333;
-    padding: 8px 12px;
-    color: #aaa;
-    font-size: 0.85rem;
-    word-wrap: break-word;
-}
-
-/* 通知 */
-.notification {
-    position: fixed;
-    top: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-weight: bold;
-    font-size: 0.9rem;
-    z-index: 100;
-}
-
-.notification.warning {
-    background: #ffcc00;
-    color: #000;
-}
-
-.notification.error {
-    background: #ff0000;
-    color: #fff;
-}
-
-.hidden {
-    display: none;
 }
