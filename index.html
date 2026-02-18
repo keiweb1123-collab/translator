@@ -3,39 +3,14 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ID-EN Local AI Translator</title>
-    <link rel="stylesheet" href="style.css">
-    <style>
-        /* 追加スタイル: プログレスバー */
-        #progress-container {
-            width: 100%;
-            background-color: #333;
-            border-radius: 4px;
-            margin: 10px 0;
-            display: none;
-            /* 初期は非表示 */
-        }
-
-        #progress-bar {
-            width: 0%;
-            height: 20px;
-            background-color: #4CAF50;
-            border-radius: 4px;
-            transition: width 0.3s;
-        }
-
-        #status-text {
-            font-size: 0.8rem;
-            color: #aaa;
-            margin-top: 5px;
-        }
-    </style>
+    <link rel="stylesheet" href="style.css?v=2">
 </head>
 
 <body>
     <div class="container">
-        <!-- 設定・コントロールエリア -->
+        <!-- ステータス表示 -->
         <div class="controls">
             <div class="status-indicators">
                 <span id="aiStatus">AIモデル: 準備中...</span>
@@ -44,10 +19,16 @@
         </div>
 
         <!-- モデル読み込みプログレスバー -->
-        <div id="progress-container">
+        <div id="progress-container" style="display:none;">
             <div id="progress-bar"></div>
         </div>
         <div id="status-text"></div>
+
+        <!-- 操作ボタン（上に移動して見つけやすく） -->
+        <div class="action-buttons">
+            <button id="startBtn" disabled>翻訳開始</button>
+            <button id="stopBtn" disabled>停止</button>
+        </div>
 
         <!-- メインの翻訳表示エリア -->
         <div class="translation-display" id="translationDisplay">
@@ -60,21 +41,14 @@
             <span id="currentSpeech">...</span>
         </div>
 
-        <!-- 操作ボタン -->
-        <div class="action-buttons">
-            <button id="startBtn" disabled>翻訳開始</button>
-            <button id="stopBtn" disabled>停止</button>
-        </div>
-
         <!-- 通知メッセージエリア -->
         <div id="notificationArea" class="notification hidden"></div>
 
-        <!-- デバッグログは非表示（開発用なので削除） -->
+        <!-- デバッグログ（非表示） -->
         <div id="debugLog" style="display:none;"></div>
     </div>
 
-    <!-- Transformers.js は script.js 内で動的にインポートするか、ここでESMとして読み込む -->
-    <script type="module" src="script.js?v=11"></script>
+    <script type="module" src="script.js?v=12"></script>
 </body>
 
 </html>
